@@ -166,7 +166,7 @@ iperf_tcp_listen(struct iperf_test *test)
      *
      * It's not clear whether this is a requirement or a convenience.
      */
-    if (test->no_delay || test->settings->mss || test->settings->socket_bufsize) {
+    if (test->no_delay || test->settings->mss || test->settings->socket_bufsize || test->settings->md5sig_key) {
 	struct addrinfo hints, *res;
 	char portstr[6];
 
@@ -305,6 +305,57 @@ iperf_tcp_listen(struct iperf_test *test)
             return -1;
         }
 
+        if (test->settings->md5sig_key) {
+            const char *key = test->settings->md5sig_key;
+            struct tcp_md5sig md5sig;
+            int err;
+
+            memset(&md5sig, 0, sizeof(md5sig));
+
+            if (test->settings->domain == AF_INET6) {
+                struct sockaddr_in6 sa_in6;
+
+                memset(&sa_in6, 0, sizeof(sa_in6));
+                sa_in6.sin6_family = AF_INET6;
+                sa_in6.sin6_port = htons(test->client_port);
+                err = inet_pton(AF_INET6, test->client_address, &sa_in6.sin6_addr);
+                if (err <= 0) {
+		    saved_errno = errno;
+		    close(s);
+		    freeaddrinfo(res);
+                    i_errno = IESETMD5SIG;
+                    return -1;
+                }
+                memcpy(&md5sig.tcpm_addr, &sa_in6, sizeof(sa_in6));
+            } else {
+                struct sockaddr_in sa_in;
+
+                memset(&sa_in, 0, sizeof(sa_in));
+                sa_in.sin_family = AF_INET;
+                sa_in.sin_port = htons(test->client_port);
+                err = inet_pton(AF_INET, test->client_address, &sa_in.sin_addr);
+                if (err <= 0) {
+		    saved_errno = errno;
+		    close(s);
+		    freeaddrinfo(res);
+                    i_errno = IESETMD5SIG;
+                    return -1;
+                }
+
+                memcpy(&md5sig.tcpm_addr, &sa_in, sizeof(sa_in));
+            }
+
+            md5sig.tcpm_keylen = strlen(key);
+            strcpy((char *)md5sig.tcpm_key, key);
+            if ((err = setsockopt(s, IPPROTO_TCP, TCP_MD5SIG, &md5sig, sizeof(md5sig))) < 0) {
+		saved_errno = errno;
+		close(s);
+		freeaddrinfo(res);
+                i_errno = IESETMD5SIG;
+                return -1;
+            }
+        }
+
         freeaddrinfo(res);
 
         if (listen(s, INT_MAX) < 0) {
@@ -392,6 +443,30 @@ iperf_tcp_connect(struct iperf_test *test)
             i_errno = IESETNODELAY;
             return -1;
         }
+    }
+
+    if (test->settings->md5sig_key) {
+	const char *key = test->settings->md5sig_key;
+	struct sockaddr_in *remote_addr;
+	char ip4[INET_ADDRSTRLEN];
+	struct tcp_md5sig md5sig;
+
+	remote_addr = (struct sockaddr_in *)server_res->ai_addr;
+	inet_ntop(AF_INET, &(remote_addr->sin_addr), ip4, INET_ADDRSTRLEN);
+
+        memset(&md5sig, 0, sizeof(md5sig));
+        md5sig.tcpm_keylen = strlen(key);
+	memset(&md5sig.tcpm_key, 0, sizeof(md5sig.tcpm_key));
+	memcpy(&md5sig.tcpm_key, key, md5sig.tcpm_keylen);
+        memcpy(&md5sig.tcpm_addr, remote_addr, sizeof(*remote_addr));
+	if (setsockopt(s, IPPROTO_TCP, TCP_MD5SIG, &md5sig, sizeof(md5sig)) < 0) {
+	    saved_errno = errno;
+	    close(s);
+	    freeaddrinfo(server_res);
+	    errno = saved_errno;
+            i_errno = IESETMD5SIG;
+            return -1;
+	}
     }
     if ((opt = test->settings->mss)) {
         if (setsockopt(s, IPPROTO_TCP, TCP_MAXSEG, &opt, sizeof(opt)) < 0) {

@@ -507,6 +507,15 @@ iperf_strerror(int int_errno)
             snprintf(errstr, len, "unable to destroy thread attributes");
             perr = 1;
             break;
+    case IESETMD5SIG:
+        snprintf(errstr, len, "unable to set TCP MD5_SIG option");
+        break;
+    case IEMISSINGMD5SIGARGS:
+        snprintf(errstr, len, "invalid TCP MD5_SIG client arguments, requires -B, --cport, -p, and -4/-6");
+        break;
+    case IEINVALIDMD5RECVPARAMS:
+        snprintf(errstr, len, "invalid TCP MD5_SIG receive parameters from client");
+        break;
 	default:
 	    snprintf(errstr, len, "int_errno=%d", int_errno);
 	    perr = 1;

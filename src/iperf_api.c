@@ -846,6 +846,12 @@ iperf_set_test_mss(struct iperf_test *ipt, int mss)
     ipt->settings->mss = mss;
 }
 
+void
+iperf_set_test_md5sig_key(struct iperf_test *ipt, const char *key)
+{
+    ipt->settings->md5sig_key = strdup(key);
+}
+
 /********************** Get/set test protocol structure ***********************/
 
 struct protocol *
@@ -1097,6 +1103,7 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
 #endif /* HAVE_SO_BINDTODEVICE */
         {"cport", required_argument, NULL, OPT_CLIENT_PORT},
         {"set-mss", required_argument, NULL, 'M'},
+        {"md5-sig", required_argument, NULL, OPT_MD5_SIG},
         {"no-delay", no_argument, NULL, 'N'},
         {"version4", no_argument, NULL, '4'},
         {"version6", no_argument, NULL, '6'},
@@ -1406,6 +1413,8 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
                     return -1;
                 }
 		client_flag = 1;
+            case OPT_MD5_SIG:
+		iperf_set_test_md5sig_key(test, optarg);
                 break;
             case 'N':
                 test->no_delay = 1;
@@ -1811,6 +1820,21 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
         return -1;
     }
 
+    /* Client: --md5-sig option requires -B, --cport, -p to be set so the addr/port
+    ** tuple can be sent to the server during parameter exchange.
+    ** Client/Server: --md5-sig option requires address family (i.e. -4/-6) to be set.
+    */
+    if (test->settings->md5sig_key) {
+        if (!test->settings->domain) {
+            i_errno = IEMISSINGMD5SIGARGS;
+            return -1;
+        }
+        if (test->role == 'c' && (!test->bind_port || !test->bind_address || !test->server_port)) {
+            i_errno = IEMISSINGMD5SIGARGS;
+            return -1;
+        }
+    }
+
     /* Set Total-rate average interval to multiplicity of State interval */
     if (test->settings->bitrate_limit_interval != 0) {
 	test->settings->bitrate_limit_stats_per_interval =
@@ -2133,7 +2157,7 @@ iperf_exchange_parameters(struct iperf_test *test)
 #endif //HAVE_SSL
 
         if ((s = test->protocol->listen(test)) < 0) {
-	        if (iperf_set_send_state(test, SERVER_ERROR) != 0)
+	    if (iperf_set_send_state(test, SERVER_ERROR) != 0)
                 return -1;
             err = htonl(i_errno);
             if (Nwrite(test->ctrl_sck, (char*) &err, sizeof(err), Ptcp) < 0) {
@@ -2270,6 +2294,12 @@ send_parameters(struct iperf_test *test)
 #endif // HAVE_SSL
 	cJSON_AddStringToObject(j, "client_version", IPERF_VERSION);
 
+        if (test->settings->md5sig_key) {
+	    cJSON_AddNumberToObject(j, "client_port", test->bind_port);
+	    cJSON_AddStringToObject(j, "client_address", test->bind_address);
+	    cJSON_AddNumberToObject(j, "tcp_md5sig", test->settings->md5sig_key ? 1 : 0);
+        }
+
 	if (test->debug) {
 	    char *str = cJSON_Print(j);
 	    printf("send_parameters:\n%s\n", str);
@@ -2378,6 +2408,33 @@ get_parameters(struct iperf_test *test)
 	    test->sender_has_retransmits = 1;
 	if (test->settings->rate)
 	    cJSON_AddNumberToObject(test->json_start, "target_bitrate", test->settings->rate);
+        if (test->settings->md5sig_key && ((j_p = cJSON_GetObjectItem(j, "tcp_md5sig")) == NULL)) {
+	        i_errno = IEINVALIDMD5RECVPARAMS;
+                printf("get_parameters: client did not set tcp_md5sig, but server specified --md5-sig argument\n");
+                r = -1;
+        }
+        if ((j_p = cJSON_GetObjectItem(j, "tcp_md5sig")) != NULL) {
+            if (!test->settings->md5sig_key) {
+	        i_errno = IEINVALIDMD5RECVPARAMS;
+                printf("get_parameters: client sent tcp_md5sig, but server did not set --md5-sig argument\n");
+                r = -1;
+            }
+            if ((j_p = cJSON_GetObjectItem(j, "client_address")) != NULL) {
+                test->client_address = strdup(j_p->valuestring);
+            } else {
+	        i_errno = IEINVALIDMD5RECVPARAMS;
+                printf("get_parameters: client sent tcp_md5sig, but no client_address parameter specified by client\n");
+                r = -1;
+            }
+            if ((j_p = cJSON_GetObjectItem(j, "client_port")) != NULL) {
+                test->client_port = j_p->valueint;
+            } else {
+	        i_errno = IEINVALIDMD5RECVPARAMS;
+                printf("get_parameters: client sent tcp_md5sig parameter, but no client_port parameter sent by client\n");
+                r = -1;
+            }
+        }
+
 	cJSON_Delete(j);
     }
     return r;
@@ -2962,6 +3019,7 @@ iperf_defaults(struct iperf_test *testp)
     testp->settings->connect_timeout = -1;
     testp->settings->rcv_timeout.secs = DEFAULT_NO_MSG_RCVD_TIMEOUT / SEC_TO_mS;
     testp->settings->rcv_timeout.usecs = (DEFAULT_NO_MSG_RCVD_TIMEOUT % SEC_TO_mS) * mS_TO_US;
+    testp->settings->md5sig_key = NULL;
     testp->zerocopy = 0;
 
     memset(testp->cookie, 0, COOKIE_SIZE);
@@ -3278,6 +3336,13 @@ iperf_reset_test(struct iperf_test *test)
         test->settings->client_rsa_pubkey = NULL;
     }
 #endif /* HAVE_SSL */
+
+    if (test->client_address) {
+        iperf_printf(test, "%s: freeing client_addr\n", __func__);
+        free(test->client_address);
+        test->client_address = NULL;
+    }
+    test->client_port = 0;
 
     memset(test->cookie, 0, COOKIE_SIZE);
     test->multisend = 10;	/* arbitrary */

@@ -170,6 +170,7 @@ struct iperf_settings
     int	      pacing_timer;	    /* pacing timer in microseconds */
     int       burst;                /* packets per burst */
     int       mss;                  /* for TCP MSS */
+    char      *md5sig_key;              /* TCP MD5 SIG key */
     int       ttl;                  /* IP TTL option */
     int       tos;                  /* type of service bit */
     int       flowlabel;            /* IPv6 flow label */
@@ -306,6 +307,8 @@ struct iperf_test
     TAILQ_HEAD(xbind_addrhead, xbind_entry) xbind_addrs; /* all -X opts */
     int       bind_port;                        /* --cport option */
     int       server_port;
+    int       client_port;                      /* server stores client port from get_parameters for tcp_md5sig */
+    char     *client_address;                   /* server stores client address from get_parameters for tcp_md5sig */
     int       omit;                             /* duration of omit period (-O flag) */
     int       duration;                         /* total duration of test (-t flag) */
     char     *diskfile_name;			/* -F option */

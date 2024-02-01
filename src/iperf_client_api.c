@@ -140,6 +140,8 @@ iperf_create_streams(struct iperf_test *test, int sender)
 		}
 	    }
 	}
+
+
 #endif /* HAVE_TCP_CONGESTION */
 
         sp = iperf_new_stream(test, s, sender);

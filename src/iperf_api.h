@@ -81,6 +81,7 @@ typedef atomic_uint_fast64_t atomic_iperf_size_t;
 #define OPT_CLIENT_PORT 5
 #define OPT_NUMSTREAMS 6
 #define OPT_FORCEFLUSH 7
+#define OPT_MD5_SIG 8
 #define OPT_NO_FQ_SOCKET_PACING 9 /* UNUSED */
 #define OPT_FQ_RATE 10
 #define OPT_DSCP 11
@@ -168,6 +169,7 @@ int	iperf_get_test_connect_timeout( struct iperf_test* ipt );
 int	iperf_get_dont_fragment( struct iperf_test* ipt );
 char*   iperf_get_test_congestion_control(struct iperf_test* ipt);
 int iperf_get_test_mss(struct iperf_test* ipt);
+void iperf_set_test_md5sig(struct iperf_test *ipt, int enable);
 int     iperf_get_mapped_v4(struct iperf_test* ipt);
 
 /* Setter routines for some fields inside iperf_test. */
@@ -421,6 +423,7 @@ enum {
     IESNDTIMEOUT = 33,      // Illegal message send timeout
     IEUDPFILETRANSFER = 34, // Cannot transfer file using UDP
     IESERVERAUTHUSERS = 35,   // Cannot access authorized users file
+    IEMISSINGMD5SIGARGS = 36, // Missing required args for --md5-sig option
     /* Test errors */
     IENEWTEST = 100,        // Unable to create a new test (check perror)
     IEINITTEST = 101,       // Test initialization failed (check perror)
@@ -471,11 +474,13 @@ enum {
     IEBINDDEVNOSUPPORT = 146,  // `ip%%dev` is not supported as system does not support bind to device
     IEHOSTDEV = 147,        // host device name (ip%%<dev>) is supported (and required) only for IPv6 link-local address
     IESETUSERTIMEOUT = 148, // Unable to set TCP USER_TIMEOUT (check perror)
+    IESETMD5SIG = 149,	    // Unable to set TCP MD5_SIG option
     IEPTHREADCREATE=150,	// Unable to create thread (check perror)
     IEPTHREADCANCEL=151,        // Unable to cancel thread (check perror)
     IEPTHREADJOIN=152,		// Unable to join thread (check perror)
     IEPTHREADATTRINIT=153,      // Unable to initialize thread attribute (check perror)
     IEPTHREADATTRDESTROY=154,      // Unable to destroy thread attribute (check perror)
+    IEINVALIDMD5RECVPARAMS = 155,     // Invalid receive parameters from client (check perror)
     /* Stream errors */
     IECREATESTREAM = 200,   // Unable to create a new stream (check herror/perror)
     IEINITSTREAM = 201,     // Unable to initialize stream (check herror/perror)
